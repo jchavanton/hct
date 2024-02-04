@@ -7,8 +7,8 @@
 	    account="default"
 	    code="200"
 	    reason="coco"
-	    ring_duration="2"
-	    hangup="12"
+	    ring_duration="0"
+	    hangup="6"
 	    play="/voice_ref_files/reference_8000_12s.wav"
 	/>
 	<action type="wait" ms="-1"/>
