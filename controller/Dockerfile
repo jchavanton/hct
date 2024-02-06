@@ -3,6 +3,9 @@ FROM golang:bullseye
 ARG VERSION="0.0.0"
 
 COPY main.go /
+COPY go.mod /
+COPY go.sum /
+
 
 RUN echo "building media server" \
  	&& cd / && go build main.go
