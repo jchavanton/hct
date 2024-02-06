@@ -30,12 +30,12 @@ type Cmd struct {
 
 func createXmlFile(w http.ResponseWriter, uuid string, xml string) {
 	// Create file
-	dst, err := os.Create("xml/" + uuid + ".xml")
+	dst, err := os.Create("/xml/"+uuid+".xml")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := os.WriteFile("xml/"+uuid+".xml", []byte(xml), 0666); err != nil {
+	if err := os.WriteFile("/xml/"+uuid+".xml", []byte(xml), 0666); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 	defer dst.Close()
