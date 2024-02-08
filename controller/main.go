@@ -1,14 +1,19 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"text/template"
 
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 )
 
@@ -18,6 +23,69 @@ var templates = template.Must(template.ParseFiles("public/cmd.html"))
 // Display the named template
 func display(w http.ResponseWriter, page string, data interface{}) {
 	templates.ExecuteTemplate(w, page+".html", data)
+}
+
+func execDockerCmd(w http.ResponseWriter, uuid string) {
+	cli, err := client.NewClientWithOpts(client.FromEnv)
+	if err != nil {
+		panic(err)
+	}
+	ctx := context.Background()
+	fmt.Printf("client created...\n")
+	cli.NegotiateAPIVersion(ctx)
+
+	containers, err := cli.ContainerList(ctx, container.ListOptions{})
+	if err != nil {
+		panic(err)
+	}
+
+	containerId := ""
+	containerName := ""
+	for _, ctr := range containers {
+		if strings.Contains(ctr.Image, "hct_client") {
+			containerId = ctr.ID
+			containerName = ctr.Image
+			fmt.Printf("hct_client container running %s %s\n", containerName, containerId)
+			break
+		}
+	}
+	if containerId == "" {
+		fmt.Printf("hct_client container not running\n")
+		//	http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	xml := fmt.Sprintf("/xml/%s.xml", uuid)
+	out := fmt.Sprintf("/output/%s.json", uuid)
+	port := "7070"
+	execConfig := types.ExecConfig{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd: []string{"/git/voip_patrol/voip_patrol",
+			"--port", port,
+			"--conf", xml,
+			"--output", out},
+	}
+
+	response, err := cli.ContainerExecCreate(ctx, containerId, execConfig)
+	//response, err := cli.ContainerExecAttach(ctx, containerId, config)
+	if err != nil {
+		panic(err)
+	}
+	startConfig := types.ExecStartCheck{
+		Detach: true,
+		Tty:    false,
+	}
+	fmt.Printf("ContainerExecCreate [%s]\n", containerId)
+
+	err = cli.ContainerExecStart(ctx, response.ID, startConfig)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("ContainerExecStart [%s]\n", containerId)
+
+	execInspect, err := cli.ContainerExecInspect(ctx, response.ID)
+	fmt.Printf("ContainerExecInspect pid[%d]running[%t]\n", execInspect.Pid, execInspect.Running)
 }
 
 type Call struct {
@@ -30,7 +98,7 @@ type Cmd struct {
 
 func createXmlFile(w http.ResponseWriter, uuid string, xml string) {
 	// Create file
-	dst, err := os.Create("/xml/"+uuid+".xml")
+	dst, err := os.Create("/xml/" + uuid + ".xml")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -103,6 +171,7 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string) {
 	`, uuid, from, to)
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
+	execDockerCmd(w, uuid)
 }
 
 func main() {

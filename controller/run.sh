@@ -13,5 +13,6 @@ docker run -d --net=host \
               --name=${CONTAINER} \
               -v ${HCT_DIR}/client/xml/:/xml \
               -v ${DIR_PREFIX}/public:/go/public \
+              -v /var/run/docker.sock:/var/run/docker.sock \
               ${IMAGE}
               # tail -f /dev/null
