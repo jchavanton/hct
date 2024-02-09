@@ -90,6 +90,7 @@ func execDockerCmd(w http.ResponseWriter, uuid string) {
 
 type Call struct {
 	Ruri string `json:"r-uri"`
+	Repeat int `json:"repeat"`
 }
 
 type Cmd struct {
@@ -124,7 +125,7 @@ func cmdExec(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("call[%s]\n", cmd.Call.Ruri)
 	}
 	uuid := uuid.NewString()
-	createCall(w, uuid, cmd.Call.Ruri, cmd.Call.Ruri)
+	createCall(w, uuid, cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat)
 	w.WriteHeader(200)
 	w.Write([]byte(uuid))
 	return
@@ -147,7 +148,7 @@ func cmdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func createCall(w http.ResponseWriter, uuid string, from string, to string) {
+func createCall(w http.ResponseWriter, uuid string, from string, to string, repeat int) {
 	xml := fmt.Sprintf(`
 <config>
   <actions>
@@ -157,6 +158,7 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string) {
             caller="hct_controller@noreply.com"
             callee="%s"
             to_uri="%s"
+            repeat="%d"
             max_duration="20" hangup="16"
             username="VP_ENV_USERNAME"
             password="VP_ENV_PASSWORD"
@@ -167,8 +169,7 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string) {
   <action type="wait" complete="true"/>
  </actions>
 </config>
-
-	`, uuid, from, to)
+	`, uuid, from, to, repeat)
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
 	execDockerCmd(w, uuid)
