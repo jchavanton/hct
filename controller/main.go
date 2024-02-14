@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -25,13 +26,15 @@ func display(w http.ResponseWriter, page string, data interface{}) {
 	templates.ExecuteTemplate(w, page+".html", data)
 }
 
-func execDockerCmd(w http.ResponseWriter, uuid string) {
+func execDockerCmd(w http.ResponseWriter, uuid string, rtp_port int, sip_port int) {
+	sport := fmt.Sprintf("%d", sip_port)
+	rport := fmt.Sprintf("%d", rtp_port)
 	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		panic(err)
 	}
 	ctx := context.Background()
-	fmt.Printf("client created...\n")
+	fmt.Printf("client created... [%s]\n", sport)
 	cli.NegotiateAPIVersion(ctx)
 
 	containers, err := cli.ContainerList(ctx, container.ListOptions{})
@@ -57,12 +60,12 @@ func execDockerCmd(w http.ResponseWriter, uuid string) {
 
 	xml := fmt.Sprintf("/xml/%s.xml", uuid)
 	out := fmt.Sprintf("/output/%s.json", uuid)
-	port := "7070"
+	// port := "7070"
 	execConfig := types.ExecConfig{
 		AttachStdout: true,
 		AttachStderr: true,
-		Cmd: []string{"/git/voip_patrol/voip_patrol",
-			"--port", port,
+		Cmd: []string{"/git/voip_patrol/voip_patrol", "--udp",  "--rtp-port", rport,
+			"--port", sport,
 			"--conf", xml,
 			"--output", out},
 	}
@@ -123,9 +126,22 @@ func cmdExec(w http.ResponseWriter, r *http.Request) {
 	}
 	if cmd.Call.Ruri != "" {
 		fmt.Printf("call[%s]\n", cmd.Call.Ruri)
+	} else {
+		fmt.Printf("empty request URI\n")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return;
 	}
 	uuid := uuid.NewString()
-	createCall(w, uuid, cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat)
+	createCall(w, uuid+"-0", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10000, 15060)
+	createCall(w, uuid+"-1", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10200, 15061)
+	createCall(w, uuid+"-2", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10400, 15062)
+	createCall(w, uuid+"-3", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10600, 15063)
+	createCall(w, uuid+"-4", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10800, 15064)
+	createCall(w, uuid+"-5", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11000, 15065)
+	createCall(w, uuid+"-6", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11200, 15066)
+	createCall(w, uuid+"-7", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11400, 15067)
+	createCall(w, uuid+"-8", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11600, 15068)
+	createCall(w, uuid+"-9", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11800, 15069)
 	w.WriteHeader(200)
 	w.Write([]byte(uuid))
 	return
@@ -148,7 +164,7 @@ func cmdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func createCall(w http.ResponseWriter, uuid string, from string, to string, repeat int) {
+func createCall(w http.ResponseWriter, uuid string, from string, to string, repeat int, rtp_port int, sip_port int) {
 	xml := fmt.Sprintf(`
 <config>
   <actions>
@@ -156,8 +172,8 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string, repe
             transport="udp"
             expected_cause_code="200"
             caller="hct_controller@noreply.com"
-            callee="%s"
-            to_uri="%s"
+	    callee="%s:%d"
+	    to_uri="%s"
             repeat="%d"
             max_duration="20" hangup="16"
             username="VP_ENV_USERNAME"
@@ -169,10 +185,12 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string, repe
   <action type="wait" complete="true"/>
  </actions>
 </config>
-	`, uuid, from, to, repeat)
+	`, uuid, from, sip_port, to, repeat)
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
-	execDockerCmd(w, uuid)
+
+	execDockerCmd(w, uuid, rtp_port, sip_port)
+	time.Sleep(2 * time.Second)
 }
 
 func main() {

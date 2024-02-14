@@ -1,11 +1,11 @@
 #!/bin/bash
 
-INSTALL_PREFIX="/opt/hct"
+INSTALL_PREFIX="/opt/"
 
 declare -a hct_hosts=("HCT_CLIENT" "HCT_SERVER")
 
 deploy_hct_config() {
-	ROLE="webrtc-gw"
+	ROLE="hct"
 	INSTALL_DIR="${INSTALL_PREFIX}/${ROLE}"
 	for i in "${hct_hosts[@]}"
 	do
