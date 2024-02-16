@@ -1,6 +1,6 @@
 #!/bin/sh
 DIR_PREFIX=`pwd`
-NAME="hct_server"
+NAME="hct_client"
 IMAGE=${NAME}:latest
 CONTAINER=${NAME}
 

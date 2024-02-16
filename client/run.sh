@@ -11,4 +11,5 @@ docker stop ${CONTAINER}
 docker rm ${CONTAINER}
 docker run -d --net=host --name=${CONTAINER} \
 	-v ${PWD}/xml:/xml \
+	-v ${PWD}/output:/output \
 	${IMAGE}

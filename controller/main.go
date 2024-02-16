@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"bufio"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,12 +12,77 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 )
+
+type SummaryReport struct {
+	Calls int32
+	TxPkt int32
+	TxBytes int32
+	RxPkt int32
+	RxBytes int32
+	Duration int32
+}
+
+type Call struct {
+	Ruri string `json:"r-uri"`
+	Repeat int `json:"repeat"`
+}
+
+type Cmd struct {
+	Call Call `json:"call"`
+}
+
+type RtpTransfer struct {
+	JitterAvg float32 `json:"jitter_avg"`
+	JitterMax float32 `json:"jitter_max"`
+	Pkt       int32   `json:"pkt"`
+	Kbytes    int32   `json:"kbytes"`
+	Loss      int32   `json:"loss"`
+	Discard   int32   `json:"discard"`
+	Mos       float32 `json:"mos_lq"`
+}
+
+type RtpStats struct {
+	Rtt          int         `json:"rtt"`
+	RemoteSocket string      `json:"remote_rtp_socket"`
+	CodecName    string      `json:"codec_name"`
+	CodecRate    string      `json:"codec_rate"`
+	Tx           RtpTransfer `json:"Tx"`
+	Rx           RtpTransfer `json:"Rx"`
+}
+
+type CallInfo struct {
+	LocalUri      string `json:"local_uri"`
+	RemoteUri     string `json:"remote_uri"`
+	LocalContact  string `json:"local_contact"`
+	RemoteContact string `json:"remote_contact"`
+}
+type TestReport struct {
+	Label            string     `json:"label"`
+	Start            string     `json:"start"`
+	End              string     `json:"end"`
+	Action           string     `json:"action"`
+	From             string     `json:"from"`
+	To               string     `json:"to"`
+	Result           string     `json:"result"`
+	ExpectedCode     int32      `json:"expected_cause_code"`
+	CauseCode        int32      `json:"cause_code"`
+	Reason           string     `json:"reason"`
+	CallId           string     `json:"callid"`
+	Transport        string     `json:"transport"`
+	PeerSocket       string     `json:"peer_socket"`
+	Duration         int32      `json:"duration"`
+	ExpectedDuration int32      `json:"expected_duration"`
+	MaxDuration      int32      `json:"max_duration"`
+	HangupDuration   int32      `json:"hangup_duration"`
+	CallInfo         CallInfo   `json:"call_info"`
+	RtpStats         []RtpStats `json:"rtp_stats"`
+}
+
 
 // Compile templates on start of the application
 var templates = template.Must(template.ParseFiles("public/cmd.html"))
@@ -91,14 +157,6 @@ func execDockerCmd(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 	fmt.Printf("ContainerExecInspect pid[%d]running[%t]\n", execInspect.Pid, execInspect.Running)
 }
 
-type Call struct {
-	Ruri string `json:"r-uri"`
-	Repeat int `json:"repeat"`
-}
-
-type Cmd struct {
-	Call Call `json:"call"`
-}
 
 func createXmlFile(w http.ResponseWriter, uuid string, xml string) {
 	// Create file
@@ -164,6 +222,69 @@ func cmdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func processResultFile(w http.ResponseWriter, r *http.Request, fn string, report *SummaryReport) {
+	file, err := os.Open("/output/"+fn)
+	if err != nil {
+		fmt.Printf("error opening result file [%s]\n", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return;
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	// optionally, resize scanner's capacity for lines over 64K, see next example
+	for scanner.Scan() {
+		// fmt.Println(scanner.Text())
+		var testReport TestReport
+		b := []byte(scanner.Text())
+		err := json.Unmarshal(b, &testReport)
+		if err != nil {
+			fmt.Printf("invalid test report[%s][%s]\n", scanner.Text(), err)
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
+		if testReport.Action == "call" {
+			report.Calls += 1
+			report.TxPkt += testReport.RtpStats[0].Tx.Pkt
+			report.TxBytes += testReport.RtpStats[0].Tx.Kbytes
+			report.RxPkt += testReport.RtpStats[0].Rx.Pkt
+			report.RxBytes += testReport.RtpStats[0].Rx.Kbytes
+			report.Duration += testReport.Duration
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Printf("error opening reading result file [%s]\n", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return;
+	}
+}
+
+func resHandler(w http.ResponseWriter, r *http.Request) {
+	uuid := r.URL.Query().Get("id")
+		fmt.Println("id =>", uuid)
+	entries, err := os.ReadDir("/output")
+	if err != nil {
+		fmt.Printf("error opening result file [%s]\n", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return;
+    	}
+	var report SummaryReport
+    	for _, e := range entries {
+		s := e.Name()
+		// fmt.Println(s)
+		if  s[len(s)-5:] == ".json" && strings.Contains(s, uuid) {
+			processResultFile(w, r, s, &report)
+    		}
+    	}
+
+	reportJson, _ := json.Marshal(report)
+	fmt.Fprintf(w, string(reportJson))
+	fmt.Println(string(reportJson))
+	ua := r.Header.Get("User-Agent")
+	m := "res"
+	fmt.Printf("[%s] %s...\n", ua, m)
+}
+
 func createCall(w http.ResponseWriter, uuid string, from string, to string, repeat int, rtp_port int, sip_port int) {
 	xml := fmt.Sprintf(`
 <config>
@@ -190,7 +311,7 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string, repe
 	createXmlFile(w, uuid, xml)
 
 	execDockerCmd(w, uuid, rtp_port, sip_port)
-	time.Sleep(2 * time.Second)
+	time.Sleep(100 * time.Millisecond)
 }
 
 func main() {
@@ -210,6 +331,7 @@ func main() {
 
 	// Upload route
 	http.HandleFunc("/cmd", cmdHandler)
+	http.HandleFunc("/res", resHandler)
 	// http.HandleFunc("/download", downloadHandler)
 
 	fmt.Printf("version[%s] Listen on port %d\n", version, port)

@@ -15,7 +15,14 @@ deploy_hct_config() {
 		ssh $i "sudo mkdir -p $INSTALL_DIR && sudo chmod -R 777 $INSTALL_DIR \
 		        && sudo mkdir -p $INSTALL_DIR/hct \
 		        && sudo chmod -R 777 $INSTALL_DIR"
-		scp -r * $i:$INSTALL_DIR
+		if [ "$1" == "HCT_CLIENT" ] ;then
+			scp -r client/* $i:$INSTALL_DIR/client
+		fi
+		if [ "$1" == "HCT_SERVER" ] ;then
+			scp -r server/* $i:$INSTALL_DIR/server
+			ssh $i "sudo mkdir -p $INSTALL_DIR/freeswitch && sudo chmod -R 777 $INSTALL_DIR/freeswitch"
+			scp -r server/freeswitch/* $i:$INSTALL_DIR/server/freeswitch
+		fi
 		ssh $i "sudo chown -R root.root $INSTALL_DIR"
 		done
 }
