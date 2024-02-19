@@ -88,16 +88,28 @@ type TestReport struct {
 var templates = template.Must(template.ParseFiles("public/cmd.html"))
 
 // Display the named template
-func display(w http.ResponseWriter, page string, data interface{}) {
-	templates.ExecuteTemplate(w, page+".html", data)
+func display(w http.ResponseWriter, page string) {
+	type Vars struct {
+		LocalIp string
+		VpServer string
+	}
+	data := Vars{os.Getenv("LOCAL_IP"), os.Getenv("VP_SERVER")} 
+	err := templates.ExecuteTemplate(w, page+".html", data)
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
-func execDockerCmd(w http.ResponseWriter, uuid string, rtp_port int, sip_port int) {
+func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port int) {
 	sport := fmt.Sprintf("%d", sip_port)
 	rport := fmt.Sprintf("%d", rtp_port)
 	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
-		panic(err)
+		fmt.Printf("error [%s]\n", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	ctx := context.Background()
 	fmt.Printf("client created... [%s]\n", sport)
@@ -105,7 +117,9 @@ func execDockerCmd(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 
 	containers, err := cli.ContainerList(ctx, container.ListOptions{})
 	if err != nil {
-		panic(err)
+		fmt.Printf("error [%s]\n", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
 	containerId := ""
@@ -139,7 +153,9 @@ func execDockerCmd(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 	response, err := cli.ContainerExecCreate(ctx, containerId, execConfig)
 	//response, err := cli.ContainerExecAttach(ctx, containerId, config)
 	if err != nil {
-		panic(err)
+		fmt.Printf("error [%s]\n", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	startConfig := types.ExecStartCheck{
 		Detach: true,
@@ -149,7 +165,9 @@ func execDockerCmd(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 
 	err = cli.ContainerExecStart(ctx, response.ID, startConfig)
 	if err != nil {
-		panic(err)
+		fmt.Printf("error [%s]\n", err.Error())
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 	fmt.Printf("ContainerExecStart [%s]\n", containerId)
 
@@ -201,7 +219,7 @@ func cmdExec(w http.ResponseWriter, r *http.Request) {
 	createCall(w, uuid+"-8", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11600, 15068)
 	createCall(w, uuid+"-9", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11800, 15069)
 	w.WriteHeader(200)
-	w.Write([]byte(uuid))
+	w.Write([]byte("<html><a href=\"http://"+os.Getenv("LOCAL_IP")+":8080/res?"+uuid+"\">check report for "+uuid+"</a></html>"))
 	return
 }
 
@@ -216,7 +234,7 @@ func cmdHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[%s] %s...\n", ua, m)
 	switch r.Method {
 	case "GET":
-		display(w, "cmd", nil)
+		display(w, "cmd")
 	case "POST":
 		cmdExec(w, r)
 	}
@@ -310,7 +328,7 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string, repe
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
 
-	execDockerCmd(w, uuid, rtp_port, sip_port)
+	cmdDockerExec(w, uuid, rtp_port, sip_port)
 	time.Sleep(100 * time.Millisecond)
 }
 

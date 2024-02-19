@@ -1,25 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
-	<head>
-	<script>
-		function prettyPrint() {
-			var myJsObj = {"call": { "r-uri": "x@127.0.0.1", "repeat": 1}};
-			// using JSON.stringify pretty print capability:
-			var str = JSON.stringify(myJsObj, undefined, 4);
-			// display pretty printed object in text area:
-			document.getElementById('cmd').innerHTML = str;
-	
-		}
-	</script>
-	<meta charset="UTF-8" />
-	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-	<meta http-equiv="X-UA-Compatible" content="ie=edge" />
-	<title>hct_controller - cmd</title>
-	</head>
-	<body onload="prettyPrint()">
-		<form action="http://127.0.0.1:8080/cmd" method="post">
-			<textarea id="cmd" name="cmd" cols="50" rows="10"></textarea>
-			<br><input type="submit" value="execute">
-		</form>
-	</body>
+  <head>
+    <script>
+      function prettyPrint() {
+    	var myJsObj = {"call": { "r-uri": "x@{{.VpServer}}", "repeat": 1}};
+    	var str = JSON.stringify(myJsObj, undefined, 4);
+    	document.getElementById('cmd').innerHTML = str;
+      }
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>hct_controller - cmd</title>
+  </head>
+  <body onload="prettyPrint()">
+    <form action="http://{{.LocalIp}}:8080/cmd" method="post">
+      <textarea id="cmd" name="cmd" cols="50" rows="10"></textarea>
+      <br><input type="submit" value="execute">
+    </form>
+  </body>
 </html>

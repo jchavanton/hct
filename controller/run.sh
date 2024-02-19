@@ -11,6 +11,7 @@ docker stop ${CONTAINER}
 docker rm ${CONTAINER}
 docker run -d --net=host \
               --name=${CONTAINER} \
+	      --env-file ${CONTAINER}.env \
               -v ${HCT_DIR}/client/xml/:/xml \
               -v ${HCT_DIR}/client/output/:/output \
               -v ${DIR_PREFIX}/public:/go/public \
