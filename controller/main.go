@@ -21,15 +21,25 @@ import (
 type SummaryReport struct {
 	Calls int32
 	TxPkt int32
-	TxBytes int32
+	TxKbytes int32
 	RxPkt int32
-	RxBytes int32
+	RxKbytes int32
 	Duration int32
+	AvgDuration float32
 }
 
 type Call struct {
 	Ruri string `json:"r-uri"`
-	Repeat int `json:"repeat"`
+	Count int `json:"count"`
+	Duration int `json:"duration"`
+}
+
+type CallParams struct {
+	Ruri string
+	Repeat int
+	Duration int
+	PortRtp int
+	PortSip int
 }
 
 type Cmd struct {
@@ -208,18 +218,28 @@ func cmdExec(w http.ResponseWriter, r *http.Request) {
 		return;
 	}
 	uuid := uuid.NewString()
-	createCall(w, uuid+"-0", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10000, 15060)
-	createCall(w, uuid+"-1", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10200, 15061)
-	createCall(w, uuid+"-2", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10400, 15062)
-	createCall(w, uuid+"-3", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10600, 15063)
-	createCall(w, uuid+"-4", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 10800, 15064)
-	createCall(w, uuid+"-5", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11000, 15065)
-	createCall(w, uuid+"-6", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11200, 15066)
-	createCall(w, uuid+"-7", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11400, 15067)
-	createCall(w, uuid+"-8", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11600, 15068)
-	createCall(w, uuid+"-9", cmd.Call.Ruri, cmd.Call.Ruri, cmd.Call.Repeat, 11800, 15069)
+	port_rtp := 10000
+	port_sip := 15060
+	calls := cmd.Call.Count
+
+	idx := 0
 	w.WriteHeader(200)
-	w.Write([]byte("<html><a href=\"http://"+os.Getenv("LOCAL_IP")+":8080/res?"+uuid+"\">check report for "+uuid+"</a></html>"))
+	w.Write([]byte("<html><a href=\"http://"+os.Getenv("LOCAL_IP")+":8080/res?id="+uuid+"\">check report for "+uuid+"</a></html>"))
+	for calls > 0 {
+		n := fmt.Sprintf("%s-%d", uuid, idx)
+		if calls < 50 {
+			params := CallParams{cmd.Call.Ruri,calls-1,cmd.Call.Duration,port_rtp,port_sip}
+			cmdCreateCall(w, n, params)
+			calls = 0
+		} else {
+			params := CallParams{cmd.Call.Ruri,49,cmd.Call.Duration,port_rtp,port_sip}
+			cmdCreateCall(w, n, params)
+			calls -= 50
+		}
+		port_rtp += 200;
+		port_sip += 1;
+		idx += 1;
+	}
 	return
 }
 
@@ -240,7 +260,7 @@ func cmdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func processResultFile(w http.ResponseWriter, r *http.Request, fn string, report *SummaryReport) {
+func resProcessResultFile(w http.ResponseWriter, r *http.Request, fn string, report *SummaryReport) {
 	file, err := os.Open("/output/"+fn)
 	if err != nil {
 		fmt.Printf("error opening result file [%s]\n", err)
@@ -263,10 +283,11 @@ func processResultFile(w http.ResponseWriter, r *http.Request, fn string, report
 		if testReport.Action == "call" {
 			report.Calls += 1
 			report.TxPkt += testReport.RtpStats[0].Tx.Pkt
-			report.TxBytes += testReport.RtpStats[0].Tx.Kbytes
+			report.TxKbytes += testReport.RtpStats[0].Tx.Kbytes
 			report.RxPkt += testReport.RtpStats[0].Rx.Pkt
-			report.RxBytes += testReport.RtpStats[0].Rx.Kbytes
+			report.RxKbytes += testReport.RtpStats[0].Rx.Kbytes
 			report.Duration += testReport.Duration
+			report.AvgDuration = float32(report.Duration/report.Calls)
 		}
 	}
 
@@ -281,6 +302,11 @@ func resHandler(w http.ResponseWriter, r *http.Request) {
 	uuid := r.URL.Query().Get("id")
 		fmt.Println("id =>", uuid)
 	entries, err := os.ReadDir("/output")
+	if uuid == "" {
+		fmt.Printf("missing id parameter\n")
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return;
+	}
 	if err != nil {
 		fmt.Printf("error opening result file [%s]\n", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -289,9 +315,9 @@ func resHandler(w http.ResponseWriter, r *http.Request) {
 	var report SummaryReport
     	for _, e := range entries {
 		s := e.Name()
-		// fmt.Println(s)
 		if  s[len(s)-5:] == ".json" && strings.Contains(s, uuid) {
-			processResultFile(w, r, s, &report)
+			fmt.Println(s)
+			resProcessResultFile(w, r, s, &report)
     		}
     	}
 
@@ -303,7 +329,9 @@ func resHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[%s] %s...\n", ua, m)
 }
 
-func createCall(w http.ResponseWriter, uuid string, from string, to string, repeat int, rtp_port int, sip_port int) {
+
+
+func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
 	xml := fmt.Sprintf(`
 <config>
   <actions>
@@ -314,7 +342,7 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string, repe
 	    callee="%s:%d"
 	    to_uri="%s"
             repeat="%d"
-            max_duration="20" hangup="16"
+            max_duration="%d" hangup="%d"
             username="VP_ENV_USERNAME"
             password="VP_ENV_PASSWORD"
             rtp_stats="true"
@@ -324,11 +352,11 @@ func createCall(w http.ResponseWriter, uuid string, from string, to string, repe
   <action type="wait" complete="true"/>
  </actions>
 </config>
-	`, uuid, from, sip_port, to, repeat)
+	`, uuid, p.Ruri, p.PortSip, p.Ruri, p.Repeat, p.Duration+2, p.Duration)
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
 
-	cmdDockerExec(w, uuid, rtp_port, sip_port)
+	cmdDockerExec(w, uuid, p.PortRtp, p.PortSip)
 	time.Sleep(100 * time.Millisecond)
 }
 
