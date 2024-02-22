@@ -22,10 +22,18 @@ type SummaryReport struct {
 	Calls int32
 	TxPkt int32
 	TxKbytes int32
+	TxLost int32
+	TxDiscard int32
+	TxJitterMax float32
 	RxPkt int32
 	RxKbytes int32
+	RxLost int32
+	RxDiscard int32
+	RxJitterMax float32
 	Duration int32
 	AvgDuration float32
+	Failed int32
+	Connected int32
 }
 
 type Call struct {
@@ -71,6 +79,7 @@ type CallInfo struct {
 	LocalContact  string `json:"local_contact"`
 	RemoteContact string `json:"remote_contact"`
 }
+
 type TestReport struct {
 	Label            string     `json:"label"`
 	Start            string     `json:"start"`
@@ -92,7 +101,6 @@ type TestReport struct {
 	CallInfo         CallInfo   `json:"call_info"`
 	RtpStats         []RtpStats `json:"rtp_stats"`
 }
-
 
 // Compile templates on start of the application
 var templates = template.Must(template.ParseFiles("public/cmd.html"))
@@ -199,6 +207,28 @@ func createXmlFile(w http.ResponseWriter, uuid string, xml string) {
 	defer dst.Close()
 }
 
+func cmdMakeCalls(w http.ResponseWriter, r *http.Request, cmd *Cmd, uuid string) {
+	port_rtp := 10000
+	port_sip := 15060
+	idx := 0
+	calls := cmd.Call.Count
+	for calls > 0 {
+		n := fmt.Sprintf("%s-%d", uuid, idx)
+		if calls < 50 {
+			params := CallParams{cmd.Call.Ruri,calls-1,cmd.Call.Duration,port_rtp,port_sip}
+			cmdCreateCall(w, n, params)
+			calls = 0
+		} else {
+			params := CallParams{cmd.Call.Ruri,49,cmd.Call.Duration,port_rtp,port_sip}
+			cmdCreateCall(w, n, params)
+			calls -= 50
+		}
+		port_rtp += 200;
+		port_sip += 1;
+		idx += 1;
+	}
+}
+
 func cmdExec(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	s := r.FormValue("cmd")
@@ -218,28 +248,16 @@ func cmdExec(w http.ResponseWriter, r *http.Request) {
 		return;
 	}
 	uuid := uuid.NewString()
-	port_rtp := 10000
-	port_sip := 15060
-	calls := cmd.Call.Count
 
-	idx := 0
+	if cmd.Call.Count > 1000 {
+		fmt.Printf("too many calls requested [%d/%d]\n", cmd.Call.Count, 1000)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return;
+	}
+
 	w.WriteHeader(200)
 	w.Write([]byte("<html><a href=\"http://"+os.Getenv("LOCAL_IP")+":8080/res?id="+uuid+"\">check report for "+uuid+"</a></html>"))
-	for calls > 0 {
-		n := fmt.Sprintf("%s-%d", uuid, idx)
-		if calls < 50 {
-			params := CallParams{cmd.Call.Ruri,calls-1,cmd.Call.Duration,port_rtp,port_sip}
-			cmdCreateCall(w, n, params)
-			calls = 0
-		} else {
-			params := CallParams{cmd.Call.Ruri,49,cmd.Call.Duration,port_rtp,port_sip}
-			cmdCreateCall(w, n, params)
-			calls -= 50
-		}
-		port_rtp += 200;
-		port_sip += 1;
-		idx += 1;
-	}
+	go cmdMakeCalls(w, r, cmd, uuid)
 	return
 }
 
@@ -272,7 +290,7 @@ func resProcessResultFile(w http.ResponseWriter, r *http.Request, fn string, rep
 	scanner := bufio.NewScanner(file)
 	// optionally, resize scanner's capacity for lines over 64K, see next example
 	for scanner.Scan() {
-		// fmt.Println(scanner.Text())
+		fmt.Println(scanner.Text())
 		var testReport TestReport
 		b := []byte(scanner.Text())
 		err := json.Unmarshal(b, &testReport)
@@ -282,12 +300,29 @@ func resProcessResultFile(w http.ResponseWriter, r *http.Request, fn string, rep
 		}
 		if testReport.Action == "call" {
 			report.Calls += 1
-			report.TxPkt += testReport.RtpStats[0].Tx.Pkt
-			report.TxKbytes += testReport.RtpStats[0].Tx.Kbytes
-			report.RxPkt += testReport.RtpStats[0].Rx.Pkt
-			report.RxKbytes += testReport.RtpStats[0].Rx.Kbytes
-			report.Duration += testReport.Duration
-			report.AvgDuration = float32(report.Duration/report.Calls)
+			if len(testReport.RtpStats) > 0 {
+				report.TxPkt += testReport.RtpStats[0].Tx.Pkt
+				report.TxKbytes += testReport.RtpStats[0].Tx.Kbytes
+				report.TxLost += testReport.RtpStats[0].Tx.Loss
+				report.TxDiscard += testReport.RtpStats[0].Tx.Discard
+				if report.TxJitterMax < testReport.RtpStats[0].Tx.JitterMax {
+					report.TxJitterMax = testReport.RtpStats[0].Tx.JitterMax
+				}
+				report.RxPkt += testReport.RtpStats[0].Rx.Pkt
+				report.RxKbytes += testReport.RtpStats[0].Rx.Kbytes
+				report.RxLost += testReport.RtpStats[0].Rx.Loss
+				report.RxDiscard += testReport.RtpStats[0].Rx.Discard
+				if report.RxJitterMax < testReport.RtpStats[0].Rx.JitterMax {
+					report.RxJitterMax = testReport.RtpStats[0].Rx.JitterMax
+				}
+			}
+			if testReport.CauseCode >= 300 {
+				report.Failed += 1
+			} else if testReport.CauseCode >= 200 {
+				report.Connected += 1
+				report.Duration += testReport.Duration
+				report.AvgDuration = float32(report.Duration/report.Calls)
+			}
 		}
 	}
 
@@ -329,8 +364,6 @@ func resHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[%s] %s...\n", ua, m)
 }
 
-
-
 func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
 	xml := fmt.Sprintf(`
 <config>
@@ -352,12 +385,12 @@ func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
   <action type="wait" complete="true"/>
  </actions>
 </config>
-	`, uuid, p.Ruri, p.PortSip, p.Ruri, p.Repeat, p.Duration+2, p.Duration)
+	`, uuid, p.Ruri, 5555, p.Ruri, p.Repeat, p.Duration+2, p.Duration)
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
 
 	cmdDockerExec(w, uuid, p.PortRtp, p.PortSip)
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(1000 * time.Millisecond)
 }
 
 func main() {
