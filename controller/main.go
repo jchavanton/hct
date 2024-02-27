@@ -23,12 +23,10 @@ type SummaryReport struct {
 	TxPkt int32
 	TxKbytes int32
 	TxLost int32
-	TxDiscard int32
 	TxJitterMax float32
 	RxPkt int32
 	RxKbytes int32
 	RxLost int32
-	RxDiscard int32
 	RxJitterMax float32
 	Duration int32
 	AvgDuration float32
@@ -39,12 +37,16 @@ type SummaryReport struct {
 type Call struct {
 	Ruri string `json:"destination"`
 	Count int `json:"count"`
+	Username string `json:"username"`
+	Password string `json:"password"`
 	Duration int `json:"duration"`
 }
 
 type CallParams struct {
 	Ruri string
 	Repeat int
+	Username string
+	Password string
 	Duration int
 	PortRtp int
 	PortSip int
@@ -60,7 +62,6 @@ type RtpTransfer struct {
 	Pkt       int32   `json:"pkt"`
 	Kbytes    int32   `json:"kbytes"`
 	Loss      int32   `json:"loss"`
-	Discard   int32   `json:"discard"`
 	Mos       float32 `json:"mos_lq"`
 }
 
@@ -215,11 +216,11 @@ func cmdMakeCalls(w http.ResponseWriter, r *http.Request, cmd *Cmd, uuid string)
 	for calls > 0 {
 		n := fmt.Sprintf("%s-%d", uuid, idx)
 		if calls < 50 {
-			params := CallParams{cmd.Call.Ruri,calls-1,cmd.Call.Duration,port_rtp,port_sip}
+			params := CallParams{cmd.Call.Ruri,calls-1,cmd.Call.Username,cmd.Call.Password,cmd.Call.Duration,port_rtp,port_sip}
 			cmdCreateCall(w, n, params)
 			calls = 0
 		} else {
-			params := CallParams{cmd.Call.Ruri,49,cmd.Call.Duration,port_rtp,port_sip}
+			params := CallParams{cmd.Call.Ruri,49,cmd.Call.Username,cmd.Call.Password,cmd.Call.Duration,port_rtp,port_sip}
 			cmdCreateCall(w, n, params)
 			calls -= 50
 		}
@@ -304,14 +305,12 @@ func resProcessResultFile(w http.ResponseWriter, r *http.Request, fn string, rep
 				report.TxPkt += testReport.RtpStats[0].Tx.Pkt
 				report.TxKbytes += testReport.RtpStats[0].Tx.Kbytes
 				report.TxLost += testReport.RtpStats[0].Tx.Loss
-				report.TxDiscard += testReport.RtpStats[0].Tx.Discard
 				if report.TxJitterMax < testReport.RtpStats[0].Tx.JitterMax {
 					report.TxJitterMax = testReport.RtpStats[0].Tx.JitterMax
 				}
 				report.RxPkt += testReport.RtpStats[0].Rx.Pkt
 				report.RxKbytes += testReport.RtpStats[0].Rx.Kbytes
 				report.RxLost += testReport.RtpStats[0].Rx.Loss
-				report.RxDiscard += testReport.RtpStats[0].Rx.Discard
 				if report.RxJitterMax < testReport.RtpStats[0].Rx.JitterMax {
 					report.RxJitterMax = testReport.RtpStats[0].Rx.JitterMax
 				}
@@ -375,6 +374,8 @@ func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
 	    callee="%s:%d"
 	    to_uri="%s"
             repeat="%d"
+	    username="%s"
+	    password="%s"
             max_duration="%d" hangup="%d"
             username="VP_ENV_USERNAME"
             password="VP_ENV_PASSWORD"
@@ -385,7 +386,7 @@ func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
   <action type="wait" complete="true"/>
  </actions>
 </config>
-	`, uuid, p.Ruri, 5555, p.Ruri, p.Repeat, p.Duration+2, p.Duration)
+	`, uuid, p.Ruri, 5555, p.Ruri, p.Repeat, p.Username, p.Password, p.Duration+2, p.Duration)
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
 
