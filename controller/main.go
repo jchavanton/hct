@@ -37,7 +37,7 @@ type SummaryReport struct {
 }
 
 type Call struct {
-	Ruri string `json:"r-uri"`
+	Ruri string `json:"destination"`
 	Count int `json:"count"`
 	Duration int `json:"duration"`
 }
@@ -152,7 +152,7 @@ func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 	}
 	if containerId == "" {
 		fmt.Printf("hct_client container not running\n")
-		//	http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "hct_client container not running", http.StatusInternalServerError)
 		return
 	}
 
@@ -244,14 +244,14 @@ func cmdExec(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("call[%s]\n", cmd.Call.Ruri)
 	} else {
 		fmt.Printf("empty request URI\n")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "empty request URI", http.StatusInternalServerError)
 		return;
 	}
 	uuid := uuid.NewString()
 
 	if cmd.Call.Count > 1000 {
 		fmt.Printf("too many calls requested [%d/%d]\n", cmd.Call.Count, 1000)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "too many calls requested", http.StatusInternalServerError)
 		return;
 	}
 
@@ -339,7 +339,7 @@ func resHandler(w http.ResponseWriter, r *http.Request) {
 	entries, err := os.ReadDir("/output")
 	if uuid == "" {
 		fmt.Printf("missing id parameter\n")
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "missing id parameter", http.StatusInternalServerError)
 		return;
 	}
 	if err != nil {
