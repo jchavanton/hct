@@ -1,0 +1,34 @@
+<include>
+  <extension name="public_did">
+     <condition field="${sip_h_X-DISABLE-JB}" expression="^true$" break="never">
+        <action application="log" data="disabling jitter buffer"/>
+        <anti-action application="log" data="enabling jitter buffer"/>
+        <anti-action application="jitterbuffer" data="debug:${uuid}"/>
+        <!-- set jitter buffer on the inbound call leg only (webrtc-gw >> Freeswitch) -->
+        <anti-action application="set" data="rtp_jitter_buffer_during_bridge=true"/>
+        <anti-action application="set" data="jitterbuffer_msec=20:120"/>
+     </condition>
+     <condition field="${sip_h_X-ENABLE-EJB}" expression="^true$" break="never">
+        <action application="log" data="enabling jitter buffer acceleration"/>
+        <anti-action application="log" data="no jitter buffer acceleration"/>
+        <anti-action application="set" data="rtp_jitter_buffer_accelerate=false"/>
+        <anti-action application="set" data="ejb=false"/>
+        <anti-action application="export" data="ejb=false"/>
+        <anti-action application="set" data="session_in_hangup_hook=true"/>
+        <anti-action application="set" data="api_hangup_hook=lua /hangup_metrics.lua"/>
+        <action application="set" data="rtp_jitter_buffer_accelerate=true"/>
+        <action application="set" data="ejb=true"/>
+        <action application="export" data="ejb=true"/>
+        <action application="set" data="jitterbuffer_msec=20:1200"/>
+        <action application="set" data="session_in_hangup_hook=true"/>
+        <action application="set" data="api_hangup_hook=lua /hangup_metrics.lua"/>
+     </condition>
+     <condition field="destination_number" expression="^(.*)$">
+        <action application="log" data="destination[${sip_h_x-destination}]"/>
+        <action application="export" data="session_in_hangup_hook=true"/>
+        <action application="export" data="api_hangup_hook=lua /hangup_metrics.lua"/>
+        <action application="bridge" data="{absolute_codec_string='PCMA,PCMU'}sofia/internal/${sip_h_x-destination}"/>
+        <action application="hangup"/>
+    </condition>
+  </extension>
+</include>
