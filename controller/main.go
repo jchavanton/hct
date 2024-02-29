@@ -371,7 +371,7 @@ func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
             transport="udp"
             expected_cause_code="200"
             caller="hct_controller@noreply.com"
-	    callee="%s:%d"
+	    callee="%s"
 	    to_uri="%s"
             repeat="%d"
 	    username="%s"
@@ -386,7 +386,7 @@ func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
   <action type="wait" complete="true"/>
  </actions>
 </config>
-	`, uuid, p.Ruri, 5555, p.Ruri, p.Repeat, p.Username, p.Password, p.Duration+2, p.Duration)
+	`, uuid, p.Ruri, p.Ruri, p.Repeat, p.Username, p.Password, p.Duration+2, p.Duration)
 	fmt.Printf("%s\n", xml)
 	createXmlFile(w, uuid, xml)
 
