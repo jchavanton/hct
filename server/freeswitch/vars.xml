@@ -418,7 +418,7 @@
 
   <!-- External SIP Profile -->
   <X-PRE-PROCESS cmd="set" data="external_auth_calls=false"/>
-  <X-PRE-PROCESS cmd="set" data="external_sip_port=7080"/>
+  <X-PRE-PROCESS cmd="set" data="external_sip_port=5555"/>
   <X-PRE-PROCESS cmd="set" data="external_tls_port=7081"/>
   <X-PRE-PROCESS cmd="set" data="external_ssl_enable=false"/>
 
