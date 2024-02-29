@@ -2,7 +2,7 @@
 
 XML_CONF=${XML_CONF-"basic_server.xml"}
 RESULT_FILE=${RESULT_FILE-"result.json"}
-PORT=${PORT="5050"}
+PORT=${PORT="5065"}
 
 echo "XML_CONF[${XML_CONF}] RESULT FILE[${RESULT_FILE}] PORT[$PORT]"
 

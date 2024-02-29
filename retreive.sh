@@ -19,6 +19,7 @@ retreive_hct_config() {
 			if [ "$1" == "HCT_SERVER" ] ;then
 				printf "\ndownloading to [$i]\n"
 				scp $i:$INSTALL_DIR/server/freeswitch/* server/freeswitch
+				scp $i:$INSTALL_DIR/server/* server/
 			fi
 		done
 }
