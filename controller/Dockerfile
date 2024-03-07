@@ -8,6 +8,7 @@ RUN go get github.com/google/uuid
 RUN go get github.com/docker/docker/api/types/container
 RUN go get github.com/docker/docker/client
 RUN go get github.com/ory/dockertest/v3/docker/types
+RUn go get github.com/rabbitmq/amqp091-go
 
 COPY main.go /
 

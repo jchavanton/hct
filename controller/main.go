@@ -16,6 +16,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
 	"github.com/google/uuid"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
 
 type SummaryReport struct {
@@ -119,6 +120,107 @@ func display(w http.ResponseWriter, page string) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
+
+func rmqPublish() {
+	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+	defer ch.Close()
+
+	q, err := ch.QueueDeclare(
+		"commands", // name
+		false,   // durable
+		false,   // delete when unused
+		false,   // exclusive
+		false,   // no-wait
+		nil,     // arguments
+	)
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	body := `
+{
+    "call": {
+       "destination": "x@35.183.70.45:5065",
+       "username": "default",
+       "password": "default",
+       "count": 1,
+       "duration": 10
+    }
+}`
+	err = ch.PublishWithContext(ctx,
+		"",     // exchange
+		q.Name, // routing key
+		false,  // mandatory
+		false,  // immediate
+		amqp.Publishing {
+			ContentType: "text/plain",
+			Body:        []byte(body),
+		})
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+	fmt.Printf(" [x] Sent %s\n", body)
+}
+
+func rmqConsume() {
+	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+	defer conn.Close()
+
+	ch, err := conn.Channel()
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+	defer ch.Close()
+
+	q, err := ch.QueueDeclare(
+		"commands", // name
+		false,   // durable
+		false,   // delete when unused
+		false,   // exclusive
+		false,   // no-wait
+		nil,     // arguments
+	)
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+
+	msgs, err := ch.Consume(
+		q.Name, // queue
+		"",     // consumer
+		true,   // auto-ack
+		false,  // exclusive
+		false,  // no-local
+		false,  // no-wait
+		nil,    // args
+	)
+	if err != nil {
+		fmt.Printf("error [%s]\n", err.Error())
+	}
+
+	fmt.Printf(" [*] Waiting for messages.\n")
+	var forever chan struct{}
+	go func() {
+		for d := range msgs {
+			fmt.Printf("Received a message: %s\n", d.Body)
+		}
+	} ()
+	<-forever
 }
 
 func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port int) {
@@ -396,6 +498,9 @@ func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
 
 func main() {
 	version := "0.0.0"
+	go rmqConsume();
+	go rmqPublish();
+
 	if len(os.Args) < 4 {
 		fmt.Printf("Missing argument %d\n", len(os.Args))
 		return

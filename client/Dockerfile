@@ -4,7 +4,7 @@ ARG VERSION="0.6.2"
 
 RUN echo "installing dependencies" \
 	&& apt-get update && apt-get install -y build-essential libcurl4-openssl-dev cmake pkg-config libasound2-dev \
-	&& apt-get -y install libssl-dev git
+	&& apt-get -y install libssl-dev git vim
 
 RUN echo "building VoIP Patrol" \
 	&& mkdir /git && cd /git && git clone https://github.com/jchavanton/voip_patrol.git \
