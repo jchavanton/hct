@@ -55,6 +55,7 @@ type CallParams struct {
 
 type Cmd struct {
 	Call Call `json:"call"`
+	Uuid string
 }
 
 type RtpTransfer struct {
@@ -175,7 +176,7 @@ func rmqPublish() {
 	fmt.Printf(" [x] Sent %s\n", body)
 }
 
-func rmqConsume() {
+func rmqSubscribe() {
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	if err != nil {
 		fmt.Printf("error [%s]\n", err.Error())
@@ -217,20 +218,28 @@ func rmqConsume() {
 	var forever chan struct{}
 	go func() {
 		for d := range msgs {
-			fmt.Printf("Received a message: %s\n", d.Body)
+			fmt.Printf("command message received: %s\n", d.Body)
+			cmd, err := cmdCreate(string(d.Body[:]))
+			if err != nil {
+				fmt.Printf("cmdCreate: message received error:", err)
+			}
+			go func (cmd *Cmd) {
+				err := cmdMakeCalls(cmd)
+				if err != nil {
+					fmt.Printf("cmdMakeCalls error: %s\n", err)
+				}
+			} (cmd)
 		}
 	} ()
 	<-forever
 }
 
-func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port int) {
+func cmdDockerExec(uuid string, rtp_port int, sip_port int) (error) {
 	sport := fmt.Sprintf("%d", sip_port)
 	rport := fmt.Sprintf("%d", rtp_port)
 	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
-		fmt.Printf("error [%s]\n", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 	ctx := context.Background()
 	fmt.Printf("client created... [%s]\n", sport)
@@ -238,9 +247,7 @@ func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 
 	containers, err := cli.ContainerList(ctx, container.ListOptions{})
 	if err != nil {
-		fmt.Printf("error [%s]\n", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 
 	containerId := ""
@@ -254,9 +261,8 @@ func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 		}
 	}
 	if containerId == "" {
-		fmt.Printf("hct_client container not running\n")
-		http.Error(w, "hct_client container not running", http.StatusInternalServerError)
-		return
+		err := errors.New("hct_client container not running\n")
+		return err
 	}
 
 	xml := fmt.Sprintf("/xml/%s.xml", uuid)
@@ -272,11 +278,9 @@ func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 	}
 
 	response, err := cli.ContainerExecCreate(ctx, containerId, execConfig)
-	//response, err := cli.ContainerExecAttach(ctx, containerId, config)
 	if err != nil {
 		fmt.Printf("error [%s]\n", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 	startConfig := types.ExecStartCheck{
 		Detach: true,
@@ -287,80 +291,92 @@ func cmdDockerExec(w http.ResponseWriter, uuid string, rtp_port int, sip_port in
 	err = cli.ContainerExecStart(ctx, response.ID, startConfig)
 	if err != nil {
 		fmt.Printf("error [%s]\n", err.Error())
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+		return err
 	}
 	fmt.Printf("ContainerExecStart [%s]\n", containerId)
 
 	execInspect, err := cli.ContainerExecInspect(ctx, response.ID)
 	fmt.Printf("ContainerExecInspect pid[%d]running[%t]\n", execInspect.Pid, execInspect.Running)
+	return nil
 }
 
 
-func createXmlFile(w http.ResponseWriter, uuid string, xml string) {
+func createXmlFile(uuid string, xml string) (error) {
 	// Create file
 	dst, err := os.Create("/xml/" + uuid + ".xml")
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if err := os.WriteFile("/xml/"+uuid+".xml", []byte(xml), 0666); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return err
 	}
 	defer dst.Close()
+	if err := os.WriteFile("/xml/"+uuid+".xml", []byte(xml), 0666); err != nil {
+		return err
+	}
+	return nil
 }
 
-func cmdMakeCalls(w http.ResponseWriter, r *http.Request, cmd *Cmd, uuid string) {
+func cmdMakeCalls(cmd *Cmd) (error) {
 	port_rtp := 10000
 	port_sip := 15060
 	idx := 0
 	calls := cmd.Call.Count
 	for calls > 0 {
-		n := fmt.Sprintf("%s-%d", uuid, idx)
+		n := fmt.Sprintf("%s-%d", cmd.Uuid, idx)
 		if calls < 50 {
 			params := CallParams{cmd.Call.Ruri,calls-1,cmd.Call.Username,cmd.Call.Password,cmd.Call.Duration,port_rtp,port_sip}
-			cmdCreateCall(w, n, params)
+			err := cmdCreateCall(n, params)
+			if err != nil {
+				return err
+			}
 			calls = 0
 		} else {
 			params := CallParams{cmd.Call.Ruri,49,cmd.Call.Username,cmd.Call.Password,cmd.Call.Duration,port_rtp,port_sip}
-			cmdCreateCall(w, n, params)
+			err := cmdCreateCall(n, params)
+			if err != nil {
+				return err
+			}
 			calls -= 50
 		}
 		port_rtp += 200;
 		port_sip += 1;
 		idx += 1;
 	}
+	return nil
 }
 
-func cmdExec(w http.ResponseWriter, r *http.Request) {
-	r.ParseForm()
-	s := r.FormValue("cmd")
-
+func cmdCreate(s string) (*Cmd, error) {
 	cmd := new(Cmd)
 	b := []byte(s)
 
 	err := json.Unmarshal(b, cmd)
 	if err != nil {
 		fmt.Printf("invalid command [%s][%s]\n", cmd, err)
+		return nil, err
+	}
+	if cmd.Call.Count > 1000 {
+		fmt.Printf("too many calls requested [%s][%s]\n", cmd.Call.Count, 1000)
+		err := errors.New("too many calls requested.")
+		return nil, err;
 	}
 	if cmd.Call.Ruri != "" {
 		fmt.Printf("call[%s]\n", cmd.Call.Ruri)
 	} else {
-		fmt.Printf("empty request URI\n")
-		http.Error(w, "empty request URI", http.StatusInternalServerError)
-		return;
+		err := errors.New("empy request URI\n")
+		return nil, err;
 	}
-	uuid := uuid.NewString()
+	cmd.Uuid = uuid.NewString()
+	return cmd, nil
+}
 
-	if cmd.Call.Count > 1000 {
-		fmt.Printf("too many calls requested [%d/%d]\n", cmd.Call.Count, 1000)
-		http.Error(w, "too many calls requested", http.StatusInternalServerError)
-		return;
+func cmdExec(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	s := r.FormValue("cmd")
+	cmd, err := cmdCreate(s)
+	if err != nil {
+		http.Error(w, "cmdCreate error:", http.StatusInternalServerError)
 	}
-
 	w.WriteHeader(200)
-	w.Write([]byte("<html><a href=\"http://"+os.Getenv("LOCAL_IP")+":8080/res?id="+uuid+"\">check report for "+uuid+"</a></html>"))
-	go cmdMakeCalls(w, r, cmd, uuid)
+	w.Write([]byte("<html><a href=\"http://"+os.Getenv("LOCAL_IP")+":8080/res?id="+cmd.Uuid+"\">check report for "+cmd.Uuid+"</a></html>"))
+	go cmdMakeCalls(cmd)
 	return
 }
 
@@ -465,7 +481,7 @@ func resHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Printf("[%s] %s...\n", ua, m)
 }
 
-func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
+func cmdCreateCall(uuid string, p CallParams) (error) {
 	xml := fmt.Sprintf(`
 <config>
   <actions>
@@ -490,15 +506,21 @@ func cmdCreateCall(w http.ResponseWriter, uuid string, p CallParams) {
 </config>
 	`, uuid, p.Ruri, p.Ruri, p.Repeat, p.Username, p.Password, p.Duration+2, p.Duration)
 	fmt.Printf("%s\n", xml)
-	createXmlFile(w, uuid, xml)
-
-	cmdDockerExec(w, uuid, p.PortRtp, p.PortSip)
+	err := createXmlFile(uuid, xml)
+	if err != nil {
+		return err
+	}
+	err = cmdDockerExec(uuid, p.PortRtp, p.PortSip)
+	if err != nil {
+		return err
+	}
 	time.Sleep(1000 * time.Millisecond)
+	return nil
 }
 
 func main() {
 	version := "0.0.0"
-	go rmqConsume();
+	go rmqSubscribe();
 	go rmqPublish();
 
 	if len(os.Args) < 4 {
