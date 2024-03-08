@@ -15,6 +15,7 @@ retreive_hct_config() {
 				scp $i:$INSTALL_DIR/controller/* controller
 				scp $i:$INSTALL_DIR/controller/public/* controller/public
 				scp $i:$INSTALL_DIR/client/* client
+				scp $i:$INSTALL_DIR/rabbitmq/* rabbitmq
 			fi
 			if [ "$1" == "HCT_SERVER" ] ;then
 				printf "\ndownloading to [$i]\n"
