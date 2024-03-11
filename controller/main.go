@@ -234,7 +234,7 @@ func rmqSubscribe() {
 	<-forever
 }
 
-func cmdDockerExec(uuid string, rtp_port int, sip_port int) (error) {
+func cmdDockerExec(uuid string, rtp_port int, sip_port int, expected_duration int) (error) {
 	sport := fmt.Sprintf("%d", sip_port)
 	rport := fmt.Sprintf("%d", rtp_port)
 	cli, err := client.NewClientWithOpts(client.FromEnv)
@@ -283,7 +283,7 @@ func cmdDockerExec(uuid string, rtp_port int, sip_port int) (error) {
 		return err
 	}
 	startConfig := types.ExecStartCheck{
-		Detach: true,
+		Detach: false,
 		Tty:    false,
 	}
 	fmt.Printf("ContainerExecCreate [%s]\n", containerId)
@@ -296,7 +296,15 @@ func cmdDockerExec(uuid string, rtp_port int, sip_port int) (error) {
 	fmt.Printf("ContainerExecStart [%s]\n", containerId)
 
 	execInspect, err := cli.ContainerExecInspect(ctx, response.ID)
-	fmt.Printf("ContainerExecInspect pid[%d]running[%t]\n", execInspect.Pid, execInspect.Running)
+	fmt.Printf("ContainerExecInspect >> pid[%d]running[%t]\n", execInspect.Pid, execInspect.Running)
+	time.Sleep(time.Duration(expected_duration-1) * time.Second)
+	for execInspect.Running {
+		time.Sleep(1000 * time.Millisecond)
+		execInspect, err = cli.ContainerExecInspect(ctx, response.ID)
+		fmt.Printf("ContainerExecInspect >> pid[%d]running[%t]\n", execInspect.Pid, execInspect.Running)
+	}
+	report, err := resGetReport(uuid)
+	fmt.Printf("TODO: VALIDATE AND PUBLISH REPORT : %s\n", report)
 	return nil
 }
 
@@ -397,12 +405,11 @@ func cmdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func resProcessResultFile(w http.ResponseWriter, r *http.Request, fn string, report *SummaryReport) {
+func resProcessResultFile(fn string, report *SummaryReport) (error) {
 	file, err := os.Open("/output/"+fn)
 	if err != nil {
 		fmt.Printf("error opening result file [%s]\n", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return;
+		return err;
 	}
 	defer file.Close()
 
@@ -415,7 +422,7 @@ func resProcessResultFile(w http.ResponseWriter, r *http.Request, fn string, rep
 		err := json.Unmarshal(b, &testReport)
 		if err != nil {
 			fmt.Printf("invalid test report[%s][%s]\n", scanner.Text(), err)
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return err
 		}
 		if testReport.Action == "call" {
 			report.Calls += 1
@@ -445,40 +452,53 @@ func resProcessResultFile(w http.ResponseWriter, r *http.Request, fn string, rep
 
 	if err := scanner.Err(); err != nil {
 		fmt.Printf("error opening reading result file [%s]\n", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return;
+		return err
 	}
+	return nil
 }
 
-func resHandler(w http.ResponseWriter, r *http.Request) {
-	uuid := r.URL.Query().Get("id")
-		fmt.Println("id =>", uuid)
-	entries, err := os.ReadDir("/output")
-	if uuid == "" {
-		fmt.Printf("missing id parameter\n")
-		http.Error(w, "missing id parameter", http.StatusInternalServerError)
-		return;
-	}
-	if err != nil {
-		fmt.Printf("error opening result file [%s]\n", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return;
-    	}
+func resGetReport(uuid string) (string, error) {
 	var report SummaryReport
+	entries, err := os.ReadDir("/output")
+	if err != nil {
+		fmt.Printf("error opening result directory [%s]\n", err)
+		return "", err
+	}
     	for _, e := range entries {
 		s := e.Name()
 		if  s[len(s)-5:] == ".json" && strings.Contains(s, uuid) {
 			fmt.Println(s)
-			resProcessResultFile(w, r, s, &report)
+			err := resProcessResultFile(s, &report)
+			if err != nil {
+				return "", err
+			}
     		}
     	}
-
 	reportJson, _ := json.Marshal(report)
-	fmt.Fprintf(w, string(reportJson))
 	fmt.Println(string(reportJson))
+	return string(reportJson), nil
+}
+
+func resHandler(w http.ResponseWriter, r *http.Request) {
 	ua := r.Header.Get("User-Agent")
 	m := "res"
 	fmt.Printf("[%s] %s...\n", ua, m)
+
+	uuid := r.URL.Query().Get("id")
+
+	if uuid == "" {
+		fmt.Printf("missing id parameter\n")
+		http.Error(w, "missing id parameter", http.StatusInternalServerError)
+		return
+	}
+	fmt.Println("id =>", uuid)
+
+	report, err := resGetReport(uuid)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	fmt.Fprintf(w, report)
 }
 
 func cmdCreateCall(uuid string, p CallParams) (error) {
@@ -510,7 +530,7 @@ func cmdCreateCall(uuid string, p CallParams) (error) {
 	if err != nil {
 		return err
 	}
-	err = cmdDockerExec(uuid, p.PortRtp, p.PortSip)
+	err = cmdDockerExec(uuid, p.PortRtp, p.PortSip, p.Duration)
 	if err != nil {
 		return err
 	}
