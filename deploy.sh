@@ -17,6 +17,7 @@ deploy_hct_config() {
 		        && sudo chmod -R 777 $INSTALL_DIR"
 		if [ "$1" == "HCT_CLIENT" ] ;then
 			scp -r client/* $i:$INSTALL_DIR/client
+			scp -r controller/* $i:$INSTALL_DIR/controller
 		fi
 		if [ "$1" == "HCT_SERVER" ] ;then
 			scp -r server/* $i:$INSTALL_DIR/server
