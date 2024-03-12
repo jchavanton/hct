@@ -123,7 +123,7 @@ func display(w http.ResponseWriter, page string) {
 	}
 }
 
-func rmqPublish() {
+func rmqPublish(queue string, report string) {
 	conn, err := amqp.Dial("amqp://guest:guest@localhost:5672/")
 	if err != nil {
 		fmt.Printf("error [%s]\n", err.Error())
@@ -137,7 +137,7 @@ func rmqPublish() {
 	defer ch.Close()
 
 	q, err := ch.QueueDeclare(
-		"commands", // name
+		queue, // name
 		false,   // durable
 		false,   // delete when unused
 		false,   // exclusive
@@ -151,16 +151,6 @@ func rmqPublish() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	body := `
-{
-    "call": {
-       "destination": "x@35.183.70.45:5065",
-       "username": "default",
-       "password": "default",
-       "count": 1,
-       "duration": 10
-    }
-}`
 	err = ch.PublishWithContext(ctx,
 		"",     // exchange
 		q.Name, // routing key
@@ -168,12 +158,12 @@ func rmqPublish() {
 		false,  // immediate
 		amqp.Publishing {
 			ContentType: "text/plain",
-			Body:        []byte(body),
+			Body:        []byte(report),
 		})
 	if err != nil {
 		fmt.Printf("error [%s]\n", err.Error())
 	}
-	fmt.Printf(" [x] Sent %s\n", body)
+	fmt.Printf(" [x] Sent %s\n", report)
 }
 
 func rmqSubscribe() {
@@ -304,7 +294,7 @@ func cmdDockerExec(uuid string, rtp_port int, sip_port int, expected_duration in
 		fmt.Printf("ContainerExecInspect >> pid[%d]running[%t]\n", execInspect.Pid, execInspect.Running)
 	}
 	report, err := resGetReport(uuid)
-	fmt.Printf("TODO: VALIDATE AND PUBLISH REPORT : %s\n", report)
+	rmqPublish("report", report)
 	return nil
 }
 
@@ -474,7 +464,10 @@ func resGetReport(uuid string) (string, error) {
 			}
     		}
     	}
-	reportJson, _ := json.Marshal(report)
+	reportJson, err := json.Marshal(report)
+	if err != nil {
+		return "", err
+	}
 	fmt.Println(string(reportJson))
 	return string(reportJson), nil
 }
@@ -541,7 +534,17 @@ func cmdCreateCall(uuid string, p CallParams) (error) {
 func main() {
 	version := "0.0.0"
 	go rmqSubscribe();
-	go rmqPublish();
+	body := `
+{
+    "call": {
+       "destination": "x@35.183.70.45:5065",
+       "username": "default",
+       "password": "default",
+       "count": 1,
+       "duration": 10
+    }
+}`
+	go rmqPublish("commands", body);
 
 	if len(os.Args) < 4 {
 		fmt.Printf("Missing argument %d\n", len(os.Args))
