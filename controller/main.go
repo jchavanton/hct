@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"bufio"
 	"fmt"
 	"net/http"
@@ -18,22 +19,6 @@ import (
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-type SummaryReport struct {
-	Calls int32
-	TxPkt int32
-	TxKbytes int32
-	TxLost int32
-	TxJitterMax float32
-	RxPkt int32
-	RxKbytes int32
-	RxLost int32
-	RxJitterMax float32
-	Duration int32
-	AvgDuration float32
-	Failed int32
-	Connected int32
-}
 
 type Call struct {
 	Ruri string `json:"destination"`
@@ -76,6 +61,12 @@ type RtpStats struct {
 	Rx           RtpTransfer `json:"Rx"`
 }
 
+type SipLatency struct {
+	Invite100Ms int32 `json: "invite100Ms"`
+	Invite18xMs int32 `json: "invite18xMs"`
+	Invite200Ms int32 `json: "invite200Ms"`
+}
+
 type CallInfo struct {
 	LocalUri      string `json:"local_uri"`
 	RemoteUri     string `json:"remote_uri"`
@@ -102,7 +93,46 @@ type TestReport struct {
 	MaxDuration      int32      `json:"max_duration"`
 	HangupDuration   int32      `json:"hangup_duration"`
 	CallInfo         CallInfo   `json:"call_info"`
+	SipLatency       SipLatency `json:"sip_latency"`
 	RtpStats         []RtpStats `json:"rtp_stats"`
+}
+
+type ReportRtpPkt struct {
+	Pkt int32
+	Kbytes int32
+	Lost int32
+	JitterMax float32
+}
+
+type ReportRtp struct {
+	RttAvg int32
+	Tx ReportRtpPkt
+	Rx ReportRtpPkt
+}
+
+type Stat struct {
+	Min int32 `json:"min_ms"`
+	Max int32 `json:"max_ms"`
+	Average float32 `json:"avg_ms"`
+	Stdev float32 `json:"std_ms"`   // last standard deviation
+	m2 float64 // sum of squares, used for recursive variance calculation
+	Count int32 `json:"count"`
+}
+
+type ReportSip struct {
+	Invite100 Stat `json:"invite100"`
+	Invite18x Stat `json:"invite18x"`
+	Invite200 Stat `json:"invite200"`
+}
+
+type Report struct {
+	Calls int32
+	Duration int32
+	AvgDuration float32
+	Failed int32
+	Connected int32
+	Sip ReportSip
+	Rtp ReportRtp
 }
 
 // Compile templates on start of the application
@@ -395,7 +425,46 @@ func cmdHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func resProcessResultFile(fn string, report *SummaryReport) (error) {
+func statsInit(s *Stat, latency int32) {
+	s.Stdev = float32(0.0);
+	s.m2 = float64(0.0);
+	s.Max = latency;
+	s.Min = latency;
+	s.Average = float32(latency);
+	s.Count = 1;
+}
+
+func statsUpdate(s *Stat, latency int32) {
+	if s.Count == 0 {
+		statsInit(s, latency)
+		return
+	}
+        if s.Min > latency {
+                s.Min = latency;
+	}
+        if s.Max < latency {
+                s.Max = latency;
+	}
+
+	delta := latency - int32(s.Average);
+	var c int32
+	if s.Count > 0 {
+		c = s.Count
+	} else {
+		c = 1
+	}
+	s.Average += float32(delta / c)
+	delta2 := latency - int32(s.Average);
+	s.m2 += float64(delta*delta2);
+	if s.Count-1 > 0 {
+		c = s.Count-1
+	} else {
+		c = 1
+	}
+	s.Stdev = float32(math.Sqrt(s.m2 / float64(c)));
+}
+
+func resProcessResultFile(fn string, report *Report) (error) {
 	file, err := os.Open("/output/"+fn)
 	if err != nil {
 		fmt.Printf("error opening result file [%s]\n", err)
@@ -416,18 +485,28 @@ func resProcessResultFile(fn string, report *SummaryReport) (error) {
 		}
 		if testReport.Action == "call" {
 			report.Calls += 1
+			if testReport.SipLatency.Invite100Ms > 0 {
+				statsUpdate(&report.Sip.Invite100, testReport.SipLatency.Invite100Ms)
+			}
+			if testReport.SipLatency.Invite18xMs > 0 {
+				statsUpdate(&report.Sip.Invite18x, testReport.SipLatency.Invite18xMs)
+			}
+			if testReport.SipLatency.Invite200Ms > 0 {
+				statsUpdate(&report.Sip.Invite200, testReport.SipLatency.Invite200Ms)
+			}
+
 			if len(testReport.RtpStats) > 0 {
-				report.TxPkt += testReport.RtpStats[0].Tx.Pkt
-				report.TxKbytes += testReport.RtpStats[0].Tx.Kbytes
-				report.TxLost += testReport.RtpStats[0].Tx.Loss
-				if report.TxJitterMax < testReport.RtpStats[0].Tx.JitterMax {
-					report.TxJitterMax = testReport.RtpStats[0].Tx.JitterMax
+				report.Rtp.Tx.Pkt += testReport.RtpStats[0].Tx.Pkt
+				report.Rtp.Tx.Kbytes += testReport.RtpStats[0].Tx.Kbytes
+				report.Rtp.Tx.Lost += testReport.RtpStats[0].Tx.Loss
+				if report.Rtp.Tx.JitterMax < testReport.RtpStats[0].Tx.JitterMax {
+					report.Rtp.Tx.JitterMax = testReport.RtpStats[0].Tx.JitterMax
 				}
-				report.RxPkt += testReport.RtpStats[0].Rx.Pkt
-				report.RxKbytes += testReport.RtpStats[0].Rx.Kbytes
-				report.RxLost += testReport.RtpStats[0].Rx.Loss
-				if report.RxJitterMax < testReport.RtpStats[0].Rx.JitterMax {
-					report.RxJitterMax = testReport.RtpStats[0].Rx.JitterMax
+				report.Rtp.Rx.Pkt += testReport.RtpStats[0].Rx.Pkt
+				report.Rtp.Rx.Kbytes += testReport.RtpStats[0].Rx.Kbytes
+				report.Rtp.Rx.Lost += testReport.RtpStats[0].Rx.Loss
+				if report.Rtp.Rx.JitterMax < testReport.RtpStats[0].Rx.JitterMax {
+					report.Rtp.Rx.JitterMax = testReport.RtpStats[0].Rx.JitterMax
 				}
 			}
 			if testReport.CauseCode >= 300 {
@@ -448,7 +527,7 @@ func resProcessResultFile(fn string, report *SummaryReport) (error) {
 }
 
 func resGetReport(uuid string) (string, error) {
-	var report SummaryReport
+	var report Report
 	entries, err := os.ReadDir("/output")
 	if err != nil {
 		fmt.Printf("error opening result directory [%s]\n", err)
