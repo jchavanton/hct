@@ -1,0 +1,45 @@
+{
+  "Calls": 40,
+  "Duration": 80,
+  "AvgDuration": 2,
+  "Failed": 0,
+  "Connected": 40,
+  "Sip": {
+    "invite100": {
+      "min_ms": 6,
+      "max_ms": 39,
+      "avg_ms": 20,
+      "std_ms": 10.76,
+      "count": 40
+    },
+    "invite18x": {
+      "min_ms": 0,
+      "max_ms": 0,
+      "avg_ms": 0,
+      "std_ms": 0,
+      "count": 0
+    },
+    "invite200": {
+      "min_ms": 12,
+      "max_ms": 53,
+      "avg_ms": 38,
+      "std_ms": 10.51,
+      "count": 40
+    }
+  },
+  "Rtp": {
+    "RttAvg": 0,
+    "Tx": {
+      "Pkt": 4133,
+      "Kbytes": 623,
+      "Lost": 0,
+      "JitterMax": 0
+    },
+    "Rx": {
+      "Pkt": 4033,
+      "Kbytes": 614,
+      "Lost": 0,
+      "JitterMax": 3
+    }
+  }
+}

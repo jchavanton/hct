@@ -351,17 +351,11 @@ func cmdMakeCalls(cmd *Cmd) (error) {
 		n := fmt.Sprintf("%s-%d", cmd.Uuid, idx)
 		if calls < 50 {
 			params := CallParams{cmd.Call.Ruri,calls-1,cmd.Call.Username,cmd.Call.Password,cmd.Call.Duration,port_rtp,port_sip}
-			err := cmdCreateCall(n, params)
-			if err != nil {
-				return err
-			}
+			go cmdCreateCall(n, params)
 			calls = 0
 		} else {
 			params := CallParams{cmd.Call.Ruri,49,cmd.Call.Username,cmd.Call.Password,cmd.Call.Duration,port_rtp,port_sip}
-			err := cmdCreateCall(n, params)
-			if err != nil {
-				return err
-			}
+			go cmdCreateCall(n, params)
 			calls -= 50
 		}
 		port_rtp += 200;
@@ -404,7 +398,7 @@ func cmdExec(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(200)
 	w.Write([]byte("<html><a href=\"http://"+os.Getenv("LOCAL_IP")+":8080/res?id="+cmd.Uuid+"\">check report for "+cmd.Uuid+"</a></html>"))
-	go cmdMakeCalls(cmd)
+	cmdMakeCalls(cmd)
 	return
 }
 
@@ -439,6 +433,7 @@ func statsUpdate(s *Stat, latency int32) {
 		statsInit(s, latency)
 		return
 	}
+	s.Count++
         if s.Min > latency {
                 s.Min = latency;
 	}
@@ -461,7 +456,7 @@ func statsUpdate(s *Stat, latency int32) {
 	} else {
 		c = 1
 	}
-	s.Stdev = float32(math.Sqrt(s.m2 / float64(c)));
+	s.Stdev = float32(math.Round((math.Sqrt(s.m2 / float64(c)))*100)/100)
 }
 
 func resProcessResultFile(fn string, report *Report) (error) {
@@ -619,7 +614,7 @@ func main() {
        "destination": "x@35.183.70.45:5065",
        "username": "default",
        "password": "default",
-       "count": 1,
+       "count": 2,
        "duration": 10
     }
 }`

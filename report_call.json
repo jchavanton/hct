@@ -1,0 +1,56 @@
+{
+  "label": "186b51e8-464d-4311-97bc-4511ee7fef98-0",
+  "start": "15-03-2024 18:28:52",
+  "end": "15-03-2024 18:28:54",
+  "action": "call",
+  "from": "hct_controller",
+  "to": "x",
+  "result": "PASS",
+  "expected_cause_code": 200,
+  "cause_code": 200,
+  "reason": "Normal call clearing",
+  "callid": "ea9a2f74-a610-4da4-9083-c913875ea540",
+  "transport": "UDP",
+  "peer_socket": "35.183.70.45:5555",
+  "duration": 2,
+  "expected_duration": 0,
+  "max_duration": 4,
+  "hangup_duration": 2,
+  "call_info": {
+    "local_uri": "sip:hct_controller@noreply.com",
+    "remote_uri": "sip:x@35.183.70.45:5555",
+    "local_contact": "<sip:hct_controller@172.31.4.62:15060;ob>",
+    "remote_contact": "<sip:x@35.183.70.45:5555;transport=udp>"
+  },
+  "sip_latency": {
+    "invite100Ms": 6,
+    "invite18xMs": 0,
+    "invite200Ms": 53
+  },
+  "rtp_stats": [
+    {
+      "rtt": 0,
+      "remote_rtp_socket": "35.183.70.45:12038",
+      "codec_name": "PCMU",
+      "clock_rate": "8000",
+      "Tx": {
+        "jitter_avg": 0,
+        "jitter_max": 0,
+        "pkt": 105,
+        "kbytes": 16,
+        "loss": 0,
+        "discard": 0,
+        "mos_lq": 4.500000
+      },
+      "Rx": {
+        "jitter_avg": 0,
+        "jitter_max": 0,
+        "pkt": 102,
+        "kbytes": 15,
+        "loss": 0,
+        "discard": 154,
+        "mos_lq": 4.500000
+      }
+    }
+  ]
+}
