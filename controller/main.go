@@ -528,7 +528,7 @@ func resGetReport(uuid string) (string, error) {
 		fmt.Printf("error opening result directory [%s]\n", err)
 		return "", err
 	}
-    	for _, e := range entries {
+	for _, e := range entries {
 		s := e.Name()
 		if  s[len(s)-5:] == ".json" && strings.Contains(s, uuid) {
 			fmt.Println(s)
@@ -536,8 +536,8 @@ func resGetReport(uuid string) (string, error) {
 			if err != nil {
 				return "", err
 			}
-    		}
-    	}
+		}
+	}
 	reportJson, err := json.Marshal(report)
 	if err != nil {
 		return "", err
@@ -611,7 +611,7 @@ func main() {
 	body := `
 {
     "call": {
-       "destination": "x@35.183.70.45:5065",
+       "destination": "x@35.183.70.45:5555",
        "username": "default",
        "password": "default",
        "count": 2,
