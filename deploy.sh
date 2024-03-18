@@ -22,7 +22,9 @@ deploy_hct_config() {
 		if [ "$1" == "HCT_SERVER" ] ;then
 			scp -r server/* $i:$INSTALL_DIR/server
 			ssh $i "sudo mkdir -p $INSTALL_DIR/freeswitch && sudo chmod -R 777 $INSTALL_DIR/freeswitch"
-			scp -r server/freeswitch/* $i:$INSTALL_DIR/server/freeswitch
+			scp -r freeswitch/* $i:$INSTALL_DIR/freeswitch
+			ssh $i "sudo mkdir -p $INSTALL_DIR/kamailio && sudo chmod -R 777 $INSTALL_DIR/kamailio"
+			scp -r kamailio/* $i:$INSTALL_DIR/kamailio
 		fi
 		ssh $i "sudo chown -R root.root $INSTALL_DIR"
 		done
