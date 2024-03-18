@@ -292,6 +292,8 @@ func cmdDockerExec(uuid string, rtp_port int, sip_port int, expected_duration in
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd: []string{"/git/voip_patrol/voip_patrol", "--udp",  "--rtp-port", rport,
+			"--log-level-file", "1",
+			"--log-level-console", "1",
 			"--port", sport,
 			"--conf", xml,
 			"--output", out},
